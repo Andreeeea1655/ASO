@@ -1,0 +1,48 @@
+#include <Windows.h>
+#include <iostream>
+
+int main() {
+	SC_HANDLE hscManager = OpenSCManagerA(NULL, NULL, SC_MANAGER_ENUMERATE_SERVICE);
+	if (!hscManager) {
+		std::count << "Nu se poate deschide SCM\n";
+		return 1;
+	}
+	DWORD bytesNeeded = 0, service_count = 0, resumeHandle = 0;
+	EnumServicesStatusEx(hscManager,
+		SC_ENUM_PROCESS_INFO,
+		SERVICE_WIN32,
+		SERVICE_STATE_ALL,
+		NULL,
+		0,
+		&bytesNeeded,
+		&service_count,
+		&resumeHandle,
+		NULL);
+	LPBYTE buffer = new BYTE[bytesNeeded];
+	if (!EnumServicesStatusEx(hscManager,
+		SC_ENUM_PROCESS_INFO,
+		SERVICE_WIN32,
+		SERVICE_STATE_ALL,
+		NULL,
+		0,
+		&bytesNeeded,
+		&service_count,
+		&resumeHandle,
+		NULL)) {
+		std::count << "Eroare la enumerare\n";
+		return 1;
+	}
+	ENUM_SERVICE_STATUS_PROCESS* services = (ENUM_SERVICE_STATUS_PROCESS*)buffer;
+	sdt::count << "Servicii care ruleaza:\n";
+	for (DWORD i = 0;i < service_count;i++) {
+		if (services[i].ServiceStatusProcess.dwCurrentState == SERVICE_RUNNING) {
+			std::wcout << L"Nume: " << services[i].lpServiceName << std::endl;
+			std::wcout << L"Display: " << services[i].lpDisplayName << std::endl;
+			sdt::wcout << L"PID: " << services[i].ServiceStatusProcess.dwProcessId << std::endl;
+		}
+	}
+	delete[] buffer;
+	CloseServiceHandle(hscManager);
+	return 0;
+
+}
