@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TODO — Circular Buffer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0d0d; --surface: #161616; --border: #2a2a2a;
+      --accent: #c8f135; --accent2: #ff6b35;
+      --text: #e8e8e8; --muted: #666;
+      --danger: #ff4757; --warn: #ffa832; --radius: 4px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; min-height: 100vh; }
+
+    header {
+      border-bottom: 1px solid var(--border); padding: 20px 40px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; background: var(--bg); z-index: 100;
+    }
+    .logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -1px; }
+    .logo span { color: var(--accent); }
+
+    .buffer-bar-wrap { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--muted); }
+    .buffer-bar { width: 160px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .buffer-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.4s ease; }
+    .buffer-fill.danger { background: var(--danger); }
+    .buffer-fill.warn   { background: var(--warn); }
+    .buffer-label { font-size: 12px; color: var(--text); }
+
+    main { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 65px); }
+
+    aside { border-right: 1px solid var(--border); padding: 32px 28px; display: flex; flex-direction: column; gap: 24px; }
+    .section-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+
+    input[type="text"], textarea {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px;
+      padding: 10px 12px; outline: none; transition: border-color 0.2s; width: 100%;
+    }
+    input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 80px; }
+
+    .add-btn {
+      background: var(--accent); color: #0d0d0d; border: none; border-radius: var(--radius);
+      font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px;
+      letter-spacing: 1px; padding: 14px; cursor: pointer; text-transform: uppercase;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .add-btn:hover { opacity: 0.85; }
+    .add-btn:active { transform: scale(0.98); }
+
+    .buffer-info {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px; font-size: 11px; line-height: 2; color: var(--muted);
+    }
+    .buffer-info strong { color: var(--accent); }
+
+    .eviction-notice {
+      background: rgba(255,107,53,0.08); border: 1px solid var(--accent2);
+      border-radius: var(--radius); padding: 12px 14px; font-size: 11px;
+      color: var(--accent2); display: none; line-height: 1.7;
+    }
+    .eviction-notice.show { display: block; }
+
+    .list-area { padding: 32px 36px; }
+    .list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    .filter-tabs { display: flex; gap: 4px; }
+    .tab {
+      padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: transparent; color: var(--muted); font-family: 'DM Mono', monospace;
+      font-size: 11px; cursor: pointer; transition: all 0.15s;
+    }
+    .tab.active { background: var(--accent); border-color: var(--accent); color: #0d0d0d; }
+
+    .todo-grid { display: flex; flex-direction: column; gap: 8px; }
+
+    .todo-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 20px; display: grid; grid-template-columns: auto 1fr auto;
+      gap: 14px; align-items: start; transition: border-color 0.2s;
+      animation: slideIn 0.25s ease;
+    }
+    @keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    .todo-card:hover { border-color: #3a3a3a; }
+    .todo-card.done { opacity: 0.45; }
+    .todo-card.done .todo-title { text-decoration: line-through; color: var(--muted); }
+
+    .check-box {
+      width: 20px; height: 20px; border: 1.5px solid var(--border); border-radius: 3px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 2px; transition: all 0.15s;
+    }
+    .check-box:hover { border-color: var(--accent); }
+    .todo-card.done .check-box { background: var(--accent); border-color: var(--accent); }
+    .check-box svg { display: none; }
+    .todo-card.done .check-box svg { display: block; }
+
+    .todo-body { min-width: 0; }
+    .todo-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .todo-desc { font-size: 11px; color: var(--muted); margin-bottom: 6px; line-height: 1.5; }
+    .todo-meta { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+
+    .pos-badge {
+      font-size: 9px; letter-spacing: 1px; padding: 2px 7px; border-radius: 2px;
+      color: var(--muted); background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    }
+    .pos-badge.next-out { color: var(--danger); background: rgba(255,71,87,0.08); border-color: var(--danger); }
+    .todo-date { font-size: 10px; color: var(--muted); }
+
+    .todo-actions { display: flex; gap: 6px; }
+    .icon-btn {
+      width: 28px; height: 28px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: transparent; color: var(--muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+    }
+    .icon-btn:hover { border-color: var(--danger); color: var(--danger); }
+    .icon-btn.edit:hover { border-color: var(--accent); color: var(--accent); }
+
+    .empty { padding: 80px 0; text-align: center; color: var(--muted); }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty p { font-size: 12px; line-height: 2; }
+
+    #toast {
+      position: fixed; bottom: 30px; right: 30px;
+      background: var(--accent); color: #0d0d0d;
+      font-family: 'DM Mono', monospace; font-size: 12px;
+      padding: 10px 18px; border-radius: var(--radius);
+      transform: translateY(80px); opacity: 0; transition: all 0.3s; z-index: 999; max-width: 300px;
+    }
+    #toast.err  { background: var(--danger); color: #fff; }
+    #toast.warn { background: var(--accent2); color: #fff; }
+    #toast.show { transform: translateY(0); opacity: 1; }
+
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 28px; width: 400px; display: flex; flex-direction: column; gap: 16px; }
+    .modal h3 { font-family: 'Syne', sans-serif; font-size: 16px; color: var(--accent); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+    .btn-save { background: var(--accent); color: #0d0d0d; border: none; border-radius: var(--radius); font-family: 'DM Mono', monospace; font-size: 12px; padding: 8px 18px; cursor: pointer; }
+    .btn-cancel { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); font-family: 'DM Mono', monospace; font-size: 12px; padding: 8px 18px; cursor: pointer; }
+
+    @media (max-width: 800px) {
+      main { grid-template-columns: 1fr; }
+      aside { border-right: none; border-bottom: 1px solid var(--border); }
+      header { padding: 16px 20px; }
+      .list-area { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">TODO<span>.</span>CB</div>
+  <div class="buffer-bar-wrap">
+    <span id="bufferText">0 / 10</span>
+    <div class="buffer-bar"><div class="buffer-fill" id="bufferFill" style="width:0%"></div></div>
+    <span class="buffer-label" id="bufferStatus">buffer</span>
+  </div>
+</header>
+
+<main>
+  <aside>
+    <div>
+      <div class="section-label">Adaugă TODO</div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="field">
+          <label>TITLU *</label>
+          <input type="text" id="newTitle" placeholder="Ce ai de făcut?" maxlength="200" />
+        </div>
+        <div class="field">
+          <label>DESCRIERE</label>
+          <textarea id="newDesc" placeholder="Detalii opționale..."></textarea>
+        </div>
+        <button class="add-btn" onclick="addTodo()">+ Adaugă</button>
+      </div>
+    </div>
+
+    <div class="eviction-notice" id="evictionNotice">
+      ⚠ Buffer plin! La adăugare, <strong>primul todo intrat</strong> va fi eliminat automat (FIFO).
+    </div>
+
+    <div class="buffer-info">
+      <strong>Circular Buffer — FIFO</strong><br>
+      Capacitate max: <strong>10</strong> items<br>
+      Când e plin, cel mai <em>vechi</em> todo este eliminat automat pentru a face loc celui nou.<br><br>
+      Cardul cu <span style="color:var(--danger)">⬡ NEXT OUT</span> va fi eliminat primul.
+    </div>
+  </aside>
+
+  <div class="list-area">
+    <div class="list-header">
+      <div class="section-label" style="margin:0">TASK-URI ÎN BUFFER</div>
+      <div class="filter-tabs">
+        <button class="tab active" onclick="setFilter('all',this)">Toate</button>
+        <button class="tab" onclick="setFilter('pending',this)">Active</button>
+        <button class="tab" onclick="setFilter('done',this)">Done</button>
+      </div>
+    </div>
+    <div class="todo-grid" id="todoGrid">
+      <div class="empty"><div class="empty-icon">📋</div><p>Se încarcă...</p></div>
+    </div>
+  </div>
+</main>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3>Editează TODO</h3>
+    <div class="field"><label>TITLU</label><input type="text" id="editTitle" /></div>
+    <div class="field"><label>DESCRIERE</label><textarea id="editDesc"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Anulează</button>
+      <button class="btn-save" onclick="saveEdit()">Salvează</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const API = '/api/todos';
+  let todos = [], filter = 'all', editId = null;
+
+  async function fetchTodos() {
+    try {
+      const res = await fetch(API);          // ← GET /api/todos
+      todos = await res.json();
+      renderList(); updateBufferBar();
+    } catch { showToast('Eroare conexiune API','err'); }
+  }
+
+  async function fetchStats() {
+    try {
+      const res = await fetch(API+'/stats'); // ← GET /api/todos/stats
+      const s = await res.json();
+      updateBufferUI(s);
+    } catch {}
+  }
+
+  async function addTodo() {
+    const title = document.getElementById('newTitle').value.trim();
+    if (!title) { showToast('Titlul e obligatoriu!','err'); return; }
+    const wasFullBefore = todos.length >= 10;
+
+    const res = await fetch(API, {           // ← POST /api/todos
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ title, description: document.getElementById('newDesc').value.trim() })
+    });
+    if (res.ok) {
+      document.getElementById('newTitle').value = '';
+      document.getElementById('newDesc').value  = '';
+      if (wasFullBefore) showToast('Buffer plin — primul todo eliminat (FIFO)!','warn');
+      else showToast('Todo adăugat!');
+      fetchTodos(); fetchStats();
+    } else {
+      const e = await res.json();
+      showToast(e.message || 'Eroare','err');
+    }
+  }
+
+  async function toggleDone(id) {
+    const t = todos.find(x => x.id === id);
+    if (!t) return;
+    await fetch(`${API}/${id}`, {            // ← PUT /api/todos/{id}
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ isCompleted: !t.isCompleted })
+    });
+    fetchTodos();
+  }
+
+  async function deleteTodo(id) {
+    await fetch(`${API}/${id}`,{method:'DELETE'}); // ← DELETE /api/todos/{id}
+    showToast('Todo șters.','warn');
+    fetchTodos(); fetchStats();
+  }
+
+  function openEdit(id) {
+    const t = todos.find(x => x.id === id);
+    if (!t) return;
+    editId = id;
+    document.getElementById('editTitle').value = t.title;
+    document.getElementById('editDesc').value  = t.description || '';
+    document.getElementById('modalOverlay').classList.add('show');
+  }
+  function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); editId=null; }
+
+  async function saveEdit() {
+    if (!editId) return;
+    const res = await fetch(`${API}/${editId}`, { // ← PUT /api/todos/{id}
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ title: document.getElementById('editTitle').value.trim(), description: document.getElementById('editDesc').value.trim() })
+    });
+    if (res.ok) { closeModal(); showToast('Actualizat!'); fetchTodos(); }
+  }
+
+  function setFilter(f,el) {
+    filter=f;
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active'); renderList();
+  }
+
+  function renderList() {
+    const grid = document.getElementById('todoGrid');
+    let list = todos;
+    if (filter==='pending') list = todos.filter(t=>!t.isCompleted);
+    if (filter==='done')    list = todos.filter(t=>t.isCompleted);
+
+    if (!list.length) {
+      grid.innerHTML = `<div class="empty"><div class="empty-icon">✓</div><p>Niciun todo${filter==='done'?' completat':filter==='pending'?' activ':''}.<br>Adaugă primul task!</p></div>`;
+      return;
+    }
+
+    // todos[0] = cel mai vechi = NEXT OUT când buffer e plin
+    const nextOutId = todos.length >= 10 ? todos[0].id : null;
+
+    grid.innerHTML = list.map((t, i) => {
+      const slotIndex = todos.indexOf(t) + 1;
+      const isNext = t.id === nextOutId;
+      const date = new Date(t.createdAt).toLocaleDateString('ro-RO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+      return `<div class="todo-card ${t.isCompleted?'done':''}">
+        <div class="check-box" onclick="toggleDone(${t.id})">
+          <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5L4.5 8.5L11 1.5" stroke="#0d0d0d" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="todo-body">
+          <div class="todo-title">${esc(t.title)}</div>
+          ${t.description?`<div class="todo-desc">${esc(t.description)}</div>`:''}
+          <div class="todo-meta">
+            <span class="pos-badge ${isNext?'next-out':''}">${isNext?'⬡ NEXT OUT':'slot '+slotIndex}</span>
+            <span class="todo-date">${date}</span>
+          </div>
+        </div>
+        <div class="todo-actions">
+          <button class="icon-btn edit" onclick="openEdit(${t.id})" title="Editează">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="icon-btn" onclick="deleteTodo(${t.id})" title="Șterge">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function updateBufferBar() {
+    const pct = (todos.length/10)*100;
+    const fill = document.getElementById('bufferFill');
+    fill.style.width = pct+'%';
+    fill.className = 'buffer-fill'+(pct>=100?' danger':pct>=70?' warn':'');
+    document.getElementById('bufferText').textContent = `${todos.length} / 10`;
+    document.getElementById('bufferStatus').textContent = pct>=100?'🔴 PLIN':pct>=70?'🟡 aproape plin':'buffer';
+    document.getElementById('evictionNotice').classList.toggle('show', todos.length>=10);
+  }
+
+  function updateBufferUI(s) {
+    const pct = s.fillPercent;
+    const fill = document.getElementById('bufferFill');
+    fill.style.width = pct+'%';
+    fill.className = 'buffer-fill'+(pct>=100?' danger':pct>=70?' warn':'');
+    document.getElementById('bufferText').textContent = `${s.currentCount} / ${s.maxCapacity}`;
+    document.getElementById('evictionNotice').classList.toggle('show', s.isAtCapacity);
+  }
+
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  let tt;
+  function showToast(msg,type='ok') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = type==='err'?'err show':type==='warn'?'warn show':'show';
+    clearTimeout(tt); tt = setTimeout(()=>t.className='',3000);
+  }
+
+  document.getElementById('newTitle').addEventListener('keydown',e=>{ if(e.key==='Enter') addTodo(); });
+  document.getElementById('modalOverlay').addEventListener('click',e=>{ if(e.target===e.currentTarget) closeModal(); });
+
+  fetchTodos(); fetchStats();
+</script>
+</body>
+</html>
